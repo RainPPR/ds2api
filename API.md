@@ -18,6 +18,7 @@
 - [OpenAI 兼容接口](#openai-兼容接口)
 - [Claude 兼容接口](#claude-兼容接口)
 - [Gemini 兼容接口](#gemini-兼容接口)
+- [Ollama 兼容接口](#ollama-兼容接口)
 - [Admin 接口](#admin-接口)
 - [错误响应格式](#错误响应格式)
 - [cURL 示例](#curl-示例)
@@ -125,6 +126,9 @@ Gemini 兼容客户端还可以使用 `x-goog-api-key`、`?key=` 或 `?api_key=`
 | POST | `/v1beta/models/{model}:streamGenerateContent` | 业务 | Gemini 流式 |
 | POST | `/v1/models/{model}:generateContent` | 业务 | Gemini 非流式兼容路径 |
 | POST | `/v1/models/{model}:streamGenerateContent` | 业务 | Gemini 流式兼容路径 |
+| GET | `/api/version` | 无 | Ollama 版本接口 |
+| GET | `/api/tags` | 无 | Ollama 模型列表 |
+| POST | `/api/show` | 无 | Ollama 单模型能力查询（返回 `id` 与 `capabilities`） |
 | POST | `/admin/login` | 无 | 管理登录 |
 | GET | `/admin/verify` | JWT | 校验管理 JWT |
 | GET | `/admin/vercel/config` | Admin | 读取 Vercel 预配置 |
@@ -244,6 +248,8 @@ OpenAI `/v1/*` 仍是规范路径。对于只配置 DS2API 根地址的客户端
 退役历史模型（如 `claude-1.*`、`claude-2.*`、`claude-instant-*`、`gpt-3.5*`）会被显式拒绝。
 
 ### `POST /v1/chat/completions`
+
+> 路径说明：除规范路径 `/v1/chat/completions` 外，也支持根路径快捷别名 `/chat/completions`；在 Vercel Runtime 上，这两个路径的 `stream=true` 请求都会进入 Node 流式桥接逻辑，非流式仍走 Go 主链路。
 
 **请求头**：
 
@@ -628,6 +634,20 @@ data: {"type":"message_stop"}
 
 ---
 
+## Ollama 兼容接口
+
+- `POST /api/show` 请求体：`{"model":"<model-id>"}`。
+- 响应字段使用小写 `id`（不是 `ID`），并返回 `capabilities` 数组，便于与 Ollama 风格客户端/严格 schema 对齐。
+
+示例响应：
+
+```json
+{
+  "id": "deepseek-v4-flash",
+  "capabilities": ["tools", "thinking"]
+}
+```
+
 ## Admin 接口
 
 ### `POST /admin/login`
@@ -671,11 +691,13 @@ data: {"type":"message_stop"}
 
 ### `GET /admin/vercel/config`
 
-返回 Vercel 预配置状态。
+返回 Vercel 预配置状态。优先读取环境变量，其次回退到已保存的 `vercel` 配置块。
 
 ```json
 {
   "has_token": true,
+  "token_preview": "vc****en",
+  "token_source": "config",
   "project_id": "prj_xxx",
   "team_id": null
 }
@@ -696,6 +718,12 @@ data: {"type":"message_stop"}
   "env_source_present": true,
   "env_writeback_enabled": true,
   "config_path": "/data/config.json",
+  "vercel": {
+    "has_token": true,
+    "token_preview": "vc****en",
+    "project_id": "prj_xxx",
+    "team_id": ""
+  },
   "accounts": [
     {
       "identifier": "user@example.com",
@@ -1109,11 +1137,11 @@ data: {"type":"message_stop"}
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `vercel_token` | ❌ | 空或 `__USE_PRECONFIG__` 则读环境变量 |
-| `project_id` | ❌ | 空则读 `VERCEL_PROJECT_ID` |
-| `team_id` | ❌ | 空则读 `VERCEL_TEAM_ID` |
+| `vercel_token` | ❌ | 空或 `__USE_PRECONFIG__` 则读环境变量，再回退到已保存配置 |
+| `project_id` | ❌ | 空则读 `VERCEL_PROJECT_ID`，再回退到已保存配置 |
+| `team_id` | ❌ | 空则读 `VERCEL_TEAM_ID`，再回退到已保存配置 |
 | `auto_validate` | ❌ | 默认 `true` |
-| `save_credentials` | ❌ | 默认 `true` |
+| `save_credentials` | ❌ | 默认 `true`；保存本次显式填写的 Vercel 凭据，供下次同步复用 |
 
 **成功响应**：
 

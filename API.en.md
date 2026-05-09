@@ -18,6 +18,7 @@ Docs: [Overview](README.en.md) / [Architecture](docs/ARCHITECTURE.en.md) / [Depl
 - [OpenAI-Compatible API](#openai-compatible-api)
 - [Claude-Compatible API](#claude-compatible-api)
 - [Gemini-Compatible API](#gemini-compatible-api)
+- [Ollama API](#ollama-api)
 - [Admin API](#admin-api)
 - [Error Payloads](#error-payloads)
 - [cURL Examples](#curl-examples)
@@ -123,6 +124,9 @@ Gemini-compatible clients can also send `x-goog-api-key`, `?key=`, or `?api_key=
 | POST | `/v1beta/models/{model}:streamGenerateContent` | Business | Gemini stream |
 | POST | `/v1/models/{model}:generateContent` | Business | Gemini non-stream compat path |
 | POST | `/v1/models/{model}:streamGenerateContent` | Business | Gemini stream compat path |
+| GET | `/api/version` | None | Ollama version endpoint |
+| GET | `/api/tags` | None | Ollama model list |
+| POST | `/api/show` | None | Ollama model capability query (returns `id` + `capabilities`) |
 | POST | `/admin/login` | None | Admin login |
 | GET | `/admin/verify` | JWT | Verify admin JWT |
 | GET | `/admin/vercel/config` | Admin | Read preconfigured Vercel creds |
@@ -238,6 +242,8 @@ Current vision support resolves only to `deepseek-v4-vision` and does not expose
 Retired historical families such as `claude-1.*`, `claude-2.*`, `claude-instant-*`, and `gpt-3.5*` are explicitly rejected.
 
 ### `POST /v1/chat/completions`
+
+> Path note: besides the canonical `/v1/chat/completions`, DS2API also accepts the root shortcut `/chat/completions`. On Vercel Runtime, `stream=true` on either path is handled by the Node streaming bridge, while non-stream stays on the Go primary path.
 
 **Headers**:
 
@@ -617,6 +623,20 @@ Returns SSE (`text/event-stream`), each chunk as `data: <json>`:
 
 ---
 
+## Ollama API
+
+- `POST /api/show` request body: `{"model":"<model-id>"}`.
+- Response uses lowercase `id` (not `ID`) and includes `capabilities` for Ollama-style clients and strict schemas.
+
+Example response:
+
+```json
+{
+  "id": "deepseek-v4-flash",
+  "capabilities": ["tools", "thinking"]
+}
+```
+
 ## Admin API
 
 ### `POST /admin/login`
@@ -660,11 +680,13 @@ Requires JWT: `Authorization: Bearer <jwt>`
 
 ### `GET /admin/vercel/config`
 
-Returns Vercel preconfiguration status.
+Returns Vercel preconfiguration status. Environment variables are preferred, then the saved `vercel` config block is used as a fallback.
 
 ```json
 {
   "has_token": true,
+  "token_preview": "vc****en",
+  "token_source": "config",
   "project_id": "prj_xxx",
   "team_id": null
 }
@@ -685,6 +707,12 @@ Returns sanitized config, including both `keys` and `api_keys`.
   "env_source_present": true,
   "env_writeback_enabled": true,
   "config_path": "/data/config.json",
+  "vercel": {
+    "has_token": true,
+    "token_preview": "vc****en",
+    "project_id": "prj_xxx",
+    "team_id": ""
+  },
   "accounts": [
     {
       "identifier": "user@example.com",
@@ -1096,11 +1124,11 @@ The success payload includes `sample_id`, `dir`, `meta_path`, and `upstream_path
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| `vercel_token` | ❌ | If empty or `__USE_PRECONFIG__`, read env |
-| `project_id` | ❌ | Fallback: `VERCEL_PROJECT_ID` |
-| `team_id` | ❌ | Fallback: `VERCEL_TEAM_ID` |
+| `vercel_token` | ❌ | If empty or `__USE_PRECONFIG__`, read env, then saved config |
+| `project_id` | ❌ | Fallback: `VERCEL_PROJECT_ID`, then saved config |
+| `team_id` | ❌ | Fallback: `VERCEL_TEAM_ID`, then saved config |
 | `auto_validate` | ❌ | Default `true` |
-| `save_credentials` | ❌ | Default `true` |
+| `save_credentials` | ❌ | Default `true`; saves explicitly supplied Vercel credentials for the next sync |
 
 **Success response**:
 
