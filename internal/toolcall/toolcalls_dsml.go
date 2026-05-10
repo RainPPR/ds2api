@@ -1,16 +1,19 @@
 package toolcall
 
-import "strings"
+import (
+	"strings"
+)
 
 func normalizeDSMLToolCallMarkup(text string) (string, bool) {
 	if text == "" {
 		return "", true
 	}
-	hasAliasLikeMarkup, _ := ContainsToolMarkupSyntaxOutsideIgnored(text)
-	if !hasAliasLikeMarkup {
-		return text, true
+	canonicalized := canonicalizeToolCallCandidateSpans(text)
+	hasDSMLLikeMarkup, hasCanonicalMarkup := ContainsToolMarkupSyntaxOutsideIgnored(canonicalized)
+	if !hasDSMLLikeMarkup && !hasCanonicalMarkup {
+		return canonicalized, true
 	}
-	return rewriteDSMLToolMarkupOutsideIgnored(text), true
+	return rewriteDSMLToolMarkupOutsideIgnored(canonicalized), true
 }
 
 func rewriteDSMLToolMarkupOutsideIgnored(text string) string {
@@ -36,20 +39,18 @@ func rewriteDSMLToolMarkupOutsideIgnored(text string) string {
 			i++
 			continue
 		}
-		if tag.DSMLLike {
-			b.WriteByte('<')
-			if tag.Closing {
-				b.WriteByte('/')
-			}
-			b.WriteString(tag.Name)
-			b.WriteString(text[tag.NameEnd : tag.End+1])
-			if text[tag.End] != '>' {
-				b.WriteByte('>')
-			}
-			i = tag.End + 1
-			continue
+		b.WriteByte('<')
+		if tag.Closing {
+			b.WriteByte('/')
 		}
-		b.WriteString(text[tag.Start : tag.End+1])
+		b.WriteString(tag.Name)
+		if delimLen := xmlTagEndDelimiterLenEndingAt(text, tag.End); delimLen > 0 {
+			b.WriteString(text[tag.NameEnd : tag.End+1-delimLen])
+			b.WriteByte('>')
+		} else {
+			b.WriteString(text[tag.NameEnd : tag.End+1])
+			b.WriteByte('>')
+		}
 		i = tag.End + 1
 	}
 	return b.String()
